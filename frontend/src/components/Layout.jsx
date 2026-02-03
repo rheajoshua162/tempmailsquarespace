@@ -39,11 +39,8 @@ export default function Layout() {
                 ← NEW INBOX
               </Link>
             )}
-            <Link to="/setup" className="btn-brutal-outline text-sm">
-              📖 SETUP
-            </Link>
             <Link to="/admin" className="btn-brutal-outline text-sm">
-              ADMIN
+              🔐 ADMIN
             </Link>
           </nav>
         </div>

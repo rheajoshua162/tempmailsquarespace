@@ -1,8 +1,7 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import Home from './pages/Home'
 import Inbox from './pages/Inbox'
 import Admin from './pages/Admin'
-import Setup from './pages/Setup'
 import Layout from './components/Layout'
 
 function App() {
@@ -12,7 +11,8 @@ function App() {
         <Route index element={<Home />} />
         <Route path="inbox/:sessionId" element={<Inbox />} />
         <Route path="admin" element={<Admin />} />
-        <Route path="setup" element={<Setup />} />
+        {/* Redirect old setup route to admin */}
+        <Route path="setup" element={<Navigate to="/admin" replace />} />
       </Route>
     </Routes>
   )

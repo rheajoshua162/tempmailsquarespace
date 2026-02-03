@@ -1,41 +1,52 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const db = require('../database');
 
-// Simple auth middleware
+// Hash password using SHA256 (one-way, cannot be decrypted)
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+// Default admin password hash (password: "admin123")
+// To change: set ADMIN_PASSWORD_HASH env var with SHA256 hash of your password
+const DEFAULT_PASSWORD_HASH = hashPassword('admin123');
+
+// Simple auth middleware - password only with SHA256 hash
 const authMiddleware = (req, res, next) => {
   const authHeader = req.headers.authorization;
   
-  if (!authHeader || !authHeader.startsWith('Basic ')) {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Authentication required' });
   }
   
-  const base64Credentials = authHeader.split(' ')[1];
-  const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
-  const [username, password] = credentials.split(':');
+  const token = authHeader.split(' ')[1];
+  const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH || DEFAULT_PASSWORD_HASH;
   
-  const adminUser = process.env.ADMIN_USERNAME || 'admin';
-  const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
-  
-  if (username !== adminUser || password !== adminPass) {
+  // Token is the SHA256 hash of the password
+  if (token !== adminPasswordHash) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
   
   next();
 };
 
-// Verify admin credentials
+// Verify admin credentials - password only
 router.post('/login', (req, res) => {
-  const { username, password } = req.body;
+  const { password } = req.body;
   
-  const adminUser = process.env.ADMIN_USERNAME || 'admin';
-  const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
+  if (!password) {
+    return res.status(400).json({ error: 'Password is required' });
+  }
   
-  if (username === adminUser && password === adminPass) {
-    const token = Buffer.from(`${username}:${password}`).toString('base64');
-    res.json({ success: true, token });
+  const inputHash = hashPassword(password);
+  const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH || DEFAULT_PASSWORD_HASH;
+  
+  if (inputHash === adminPasswordHash) {
+    // Return the hash as token (secure because hash cannot be reversed)
+    res.json({ success: true, token: inputHash });
   } else {
-    res.status(401).json({ error: 'Invalid credentials' });
+    res.status(401).json({ error: 'Invalid password' });
   }
 });
 

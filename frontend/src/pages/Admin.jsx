@@ -5,7 +5,7 @@ const API_BASE = '/api/admin'
 export default function Admin() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [token, setToken] = useState('')
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' })
+  const [loginForm, setLoginForm] = useState({ password: '' })
   const [error, setError] = useState('')
   
   const [stats, setStats] = useState(null)
@@ -24,6 +24,7 @@ export default function Admin() {
   const [selectedProvider, setSelectedProvider] = useState('gmail')
   const [showGmailForm, setShowGmailForm] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
+  const [setupActiveTab, setSetupActiveTab] = useState('cloudflare')
 
   // Email provider presets
   const emailProviders = {
@@ -69,9 +70,84 @@ export default function Admin() {
   }, [isLoggedIn, token])
 
   const authHeaders = () => ({
-    'Authorization': `Basic ${token}`,
+    'Authorization': `Bearer ${token}`,
     'Content-Type': 'application/json'
   })
+
+  // Setup page providers data
+  const setupProviders = {
+    cloudflare: {
+      name: 'Cloudflare',
+      icon: '☁️',
+      steps: [
+        'Login ke Cloudflare → pilih domain kamu',
+        'Klik "Email" di sidebar kiri',
+        'Klik "Email Routing" → Enable jika belum aktif',
+        'Scroll ke "Routing rules" → klik "Create address"',
+        'Pilih "Catch-all address"',
+        'Action: "Forward to" → isi email Gmail kamu',
+        'Klik "Save"',
+        'Verifikasi email di Gmail jika diminta'
+      ]
+    },
+    squarespace: {
+      name: 'Squarespace',
+      icon: '⬛',
+      steps: [
+        'Login ke Squarespace → buka Settings',
+        'Klik "Domains" → pilih domain kamu',
+        'Klik "Email" di menu domain',
+        'Klik "Email Forwarding"',
+        'Klik "Add Forwarder"',
+        'Email Prefix: ketik * (bintang/asterisk)',
+        'Forward To: isi email Gmail kamu',
+        'Klik "Save"',
+        'Verifikasi email di Gmail jika diminta'
+      ]
+    },
+    namecheap: {
+      name: 'Namecheap',
+      icon: '🟠',
+      steps: [
+        'Login ke Namecheap → Domain List',
+        'Klik "Manage" pada domain kamu',
+        'Klik tab "Email Forwarding"',
+        'Enable Email Forwarding',
+        'Alias: ketik * (catch-all)',
+        'Forward To: isi email Gmail kamu',
+        'Klik "Add Forwarder"',
+        'Verifikasi email di Gmail jika diminta'
+      ]
+    },
+    godaddy: {
+      name: 'GoDaddy',
+      icon: '🟢',
+      steps: [
+        'Login ke GoDaddy → My Products',
+        'Klik domain kamu → "DNS"',
+        'Scroll ke "Forwarding" → "Email Forwarding"',
+        'Klik "Add" atau "Create"',
+        'Forward: ketik * (catch-all)',
+        'To: isi email Gmail kamu',
+        'Klik "Save"',
+        'Verifikasi email di Gmail jika diminta'
+      ]
+    },
+    googledomains: {
+      name: 'Google Domains',
+      icon: '🔵',
+      steps: [
+        'Login ke Google Domains',
+        'Pilih domain kamu',
+        'Klik "Email" di sidebar',
+        'Klik "Email Forwarding"',
+        'Klik "Add email alias"',
+        'Alias: ketik * (catch-all)',
+        'Forward to: isi email Gmail kamu',
+        'Klik "Add"'
+      ]
+    }
+  }
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -81,7 +157,7 @@ export default function Admin() {
       const res = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(loginForm)
+        body: JSON.stringify({ password: loginForm.password })
       })
       const data = await res.json()
       
@@ -90,6 +166,7 @@ export default function Admin() {
       setToken(data.token)
       localStorage.setItem('adminToken', data.token)
       setIsLoggedIn(true)
+      setLoginForm({ password: '' })
     } catch (err) {
       setError(err.message)
     }
@@ -291,14 +368,18 @@ export default function Admin() {
     }
   }
 
-  // Login form
+  // Login form - password only
   if (!isLoggedIn) {
     return (
       <div className="max-w-md mx-auto">
         <div className="card-brutal">
-          <h2 className="font-display text-4xl text-brutal-black mb-6 text-center">
-            ADMIN LOGIN
-          </h2>
+          <div className="text-center mb-6">
+            <div className="text-6xl mb-4">🔐</div>
+            <h2 className="font-display text-4xl text-brutal-black">
+              ADMIN LOGIN
+            </h2>
+            <p className="text-brutal-dark mt-2 text-sm">Enter password to access admin panel</p>
+          </div>
           
           {error && (
             <div className="mb-4 p-3 border-3 border-red-500 bg-red-100 text-red-700 font-bold">
@@ -307,25 +388,16 @@ export default function Admin() {
           )}
           
           <form onSubmit={handleLogin}>
-            <div className="mb-4">
-              <label className="block font-bold text-brutal-black mb-2 uppercase">Username</label>
-              <input
-                type="text"
-                value={loginForm.username}
-                onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
-                className="input-brutal"
-                required
-              />
-            </div>
-            
             <div className="mb-6">
               <label className="block font-bold text-brutal-black mb-2 uppercase">Password</label>
               <input
                 type="password"
                 value={loginForm.password}
                 onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                className="input-brutal"
+                className="input-brutal text-center text-xl tracking-widest"
+                placeholder="••••••••"
                 required
+                autoFocus
               />
             </div>
             
@@ -333,6 +405,12 @@ export default function Admin() {
               LOGIN →
             </button>
           </form>
+          
+          <div className="mt-4 p-3 bg-brutal-gray border-2 border-brutal-black text-center">
+            <p className="text-xs text-brutal-dark">
+              🔒 Password is securely hashed with SHA256
+            </p>
+          </div>
         </div>
       </div>
     )
@@ -360,7 +438,7 @@ export default function Admin() {
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-2 mb-6">
-        {['stats', 'gmail', 'domains', 'inboxes', 'tutorial'].map((tab) => (
+        {['stats', 'gmail', 'domains', 'inboxes', 'setup'].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -369,7 +447,7 @@ export default function Admin() {
                 ? 'bg-brutal-orange shadow-brutal' 
                 : 'bg-brutal-white hover:bg-brutal-gray'}`}
           >
-            {tab === 'gmail' ? 'GMAIL ACCOUNTS' : tab}
+            {tab === 'gmail' ? '📧 EMAIL' : tab === 'setup' ? '📖 SETUP' : tab}
           </button>
         ))}
       </div>
@@ -717,174 +795,205 @@ export default function Admin() {
         </div>
       )}
 
-      {/* Tutorial Tab */}
-      {activeTab === 'tutorial' && (
-        <div className="card-brutal">
-          <h3 className="font-display text-3xl mb-6">📚 TUTORIAL: SETUP DOMAIN & GMAIL</h3>
-          
-          {/* Step 1: Email Provider Setup */}
-          <div className="mb-8 p-4 border-4 border-brutal-black">
-            <h4 className="font-display text-2xl mb-4 text-brutal-orange">STEP 1: SETUP EMAIL ACCOUNT (IMAP)</h4>
+      {/* Setup Tab - moved from separate page */}
+      {activeTab === 'setup' && (
+        <div className="space-y-6">
+          {/* How it works */}
+          <div className="card-brutal">
+            <h3 className="font-display text-2xl text-brutal-black mb-4">🔧 CARA KERJA TEMPMAIL</h3>
+            <div className="grid md:grid-cols-4 gap-4 text-center">
+              <div className="p-4 border-4 border-brutal-black bg-brutal-gray">
+                <div className="text-3xl mb-2">1️⃣</div>
+                <p className="font-bold text-sm">Email masuk ke<br />user@domain.com</p>
+              </div>
+              <div className="p-4 border-4 border-brutal-black bg-brutal-orange">
+                <div className="text-3xl mb-2">2️⃣</div>
+                <p className="font-bold text-sm">Domain forward<br />ke Gmail</p>
+              </div>
+              <div className="p-4 border-4 border-brutal-black bg-brutal-gray">
+                <div className="text-3xl mb-2">3️⃣</div>
+                <p className="font-bold text-sm">Server fetch<br />via IMAP</p>
+              </div>
+              <div className="p-4 border-4 border-brutal-black bg-brutal-orange">
+                <div className="text-3xl mb-2">4️⃣</div>
+                <p className="font-bold text-sm">Email tampil<br />di inbox user</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Step 1: Gmail App Password */}
+          <div className="card-brutal">
+            <h3 className="font-display text-2xl text-brutal-black mb-4">
+              📧 STEP 1: BUAT GMAIL APP PASSWORD
+            </h3>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 p-3 border-4 border-brutal-black bg-brutal-white">
+                <span className="font-bold text-brutal-orange">1.</span>
+                <span>Buka <a href="https://myaccount.google.com/security" target="_blank" rel="noopener noreferrer" className="text-brutal-orange underline font-bold">Google Account → Security</a></span>
+              </div>
+              <div className="flex items-start gap-3 p-3 border-4 border-brutal-black bg-brutal-white">
+                <span className="font-bold text-brutal-orange">2.</span>
+                <span>Aktifkan <strong>2-Step Verification</strong> (wajib!)</span>
+              </div>
+              <div className="flex items-start gap-3 p-3 border-4 border-brutal-black bg-brutal-white">
+                <span className="font-bold text-brutal-orange">3.</span>
+                <span>Cari <strong>"App passwords"</strong> di search bar</span>
+              </div>
+              <div className="flex items-start gap-3 p-3 border-4 border-brutal-black bg-brutal-white">
+                <span className="font-bold text-brutal-orange">4.</span>
+                <span>Buat app password baru → pilih <strong>"Mail"</strong></span>
+              </div>
+              <div className="flex items-start gap-3 p-3 border-4 border-brutal-black bg-brutal-white">
+                <span className="font-bold text-brutal-orange">5.</span>
+                <span>Copy <strong>16 karakter password</strong> yang muncul</span>
+              </div>
+            </div>
+            <div className="mt-4 p-4 border-4 border-dashed border-brutal-black bg-yellow-50">
+              <p className="font-bold text-brutal-black">
+                ⚠️ Simpan password ini! Akan digunakan di tab EMAIL ACCOUNTS.
+              </p>
+            </div>
+          </div>
+
+          {/* Step 2: Email Forwarding by Provider */}
+          <div className="card-brutal">
+            <h3 className="font-display text-2xl text-brutal-black mb-4">
+              📨 STEP 2: SETUP EMAIL FORWARDING (CATCH-ALL)
+            </h3>
             
-            {/* Gmail */}
-            <div className="mb-4 p-3 bg-red-50 border-2 border-red-300">
-              <p className="font-bold mb-2 text-lg">📧 GMAIL</p>
-              <div className="space-y-2 text-sm">
-                <p><strong>Enable IMAP:</strong> Gmail → Settings → See all settings → Forwarding and POP/IMAP → Enable IMAP</p>
-                <p><strong>App Password:</strong></p>
-                <ul className="list-disc list-inside ml-4">
-                  <li>Buka <a href="https://myaccount.google.com/security" target="_blank" rel="noreferrer" className="text-blue-600 underline">Google Security</a> → Enable 2FA</li>
-                  <li>App passwords → Generate → Copy 16 karakter</li>
-                </ul>
-                <p className="text-xs bg-white p-1"><strong>IMAP:</strong> imap.gmail.com:993</p>
-              </div>
+            <p className="text-brutal-dark mb-4">
+              Pilih provider domain kamu untuk melihat tutorial:
+            </p>
+
+            {/* Provider Tabs */}
+            <div className="flex flex-wrap gap-2 mb-6">
+              {Object.entries(setupProviders).map(([key, provider]) => (
+                <button
+                  key={key}
+                  onClick={() => setSetupActiveTab(key)}
+                  className={`px-4 py-2 border-4 border-brutal-black font-bold uppercase text-sm transition-all
+                    ${setupActiveTab === key 
+                      ? 'bg-brutal-orange text-brutal-black shadow-brutal' 
+                      : 'bg-brutal-white text-brutal-black hover:bg-brutal-gray'}`}
+                >
+                  {provider.icon} {provider.name}
+                </button>
+              ))}
             </div>
 
-            {/* Outlook */}
-            <div className="mb-4 p-3 bg-blue-50 border-2 border-blue-300">
-              <p className="font-bold mb-2 text-lg">📧 OUTLOOK / HOTMAIL</p>
-              <div className="space-y-2 text-sm">
-                <p><strong>App Password:</strong></p>
-                <ul className="list-disc list-inside ml-4">
-                  <li>Buka <a href="https://account.microsoft.com/security" target="_blank" rel="noreferrer" className="text-blue-600 underline">Microsoft Security</a></li>
-                  <li>Advanced security options → App passwords → Create new</li>
-                </ul>
-                <p className="text-xs bg-white p-1"><strong>IMAP:</strong> outlook.office365.com:993</p>
-              </div>
+            {/* Steps */}
+            <div className="space-y-2">
+              {setupProviders[setupActiveTab].steps.map((step, index) => (
+                <div 
+                  key={index}
+                  className="flex items-start gap-3 p-3 border-4 border-brutal-black bg-brutal-white"
+                >
+                  <span className="font-bold text-brutal-orange min-w-[24px]">{index + 1}.</span>
+                  <span>{step}</span>
+                </div>
+              ))}
             </div>
 
-            {/* Yahoo */}
-            <div className="mb-4 p-3 bg-purple-50 border-2 border-purple-300">
-              <p className="font-bold mb-2 text-lg">📧 YAHOO MAIL</p>
-              <div className="space-y-2 text-sm">
-                <p><strong>App Password:</strong></p>
-                <ul className="list-disc list-inside ml-4">
-                  <li>Buka <a href="https://login.yahoo.com/account/security" target="_blank" rel="noreferrer" className="text-blue-600 underline">Yahoo Account Security</a></li>
-                  <li>Enable 2-Step Verification</li>
-                  <li>Generate app password → Select "Other App"</li>
-                </ul>
-                <p className="text-xs bg-white p-1"><strong>IMAP:</strong> imap.mail.yahoo.com:993</p>
-              </div>
-            </div>
-
-            {/* Zoho */}
-            <div className="mb-4 p-3 bg-green-50 border-2 border-green-300">
-              <p className="font-bold mb-2 text-lg">📧 ZOHO MAIL (Recommended for Custom Domain)</p>
-              <div className="space-y-2 text-sm">
-                <p><strong>Setup:</strong></p>
-                <ul className="list-disc list-inside ml-4">
-                  <li>Buat akun di <a href="https://www.zoho.com/mail/" target="_blank" rel="noreferrer" className="text-blue-600 underline">Zoho Mail</a> (gratis)</li>
-                  <li>Settings → Security → App Passwords → Generate</li>
-                  <li>Zoho mendukung custom domain gratis!</li>
-                </ul>
-                <p className="text-xs bg-white p-1"><strong>IMAP:</strong> imap.zoho.com:993</p>
-              </div>
-            </div>
-
-            {/* iCloud */}
-            <div className="mb-4 p-3 bg-gray-50 border-2 border-gray-300">
-              <p className="font-bold mb-2 text-lg">📧 iCLOUD MAIL</p>
-              <div className="space-y-2 text-sm">
-                <p><strong>App Password:</strong></p>
-                <ul className="list-disc list-inside ml-4">
-                  <li>Buka <a href="https://appleid.apple.com/" target="_blank" rel="noreferrer" className="text-blue-600 underline">Apple ID</a> → Sign-in and Security</li>
-                  <li>App-Specific Passwords → Generate</li>
-                </ul>
-                <p className="text-xs bg-white p-1"><strong>IMAP:</strong> imap.mail.me.com:993</p>
-              </div>
-            </div>
-
-            <div className="p-3 bg-yellow-100 border-2 border-yellow-500">
-              <p className="font-bold">⚠️ PENTING:</p>
-              <p className="text-sm">Semua provider membutuhkan <strong>App Password</strong>, bukan password biasa. App Password biasanya 16 karakter.</p>
+            <div className="mt-4 p-4 border-4 border-dashed border-brutal-black bg-green-50">
+              <p className="font-bold text-brutal-black">
+                ✅ Setelah setup, semua email ke *@domain.com akan di-forward ke Gmail!
+              </p>
             </div>
           </div>
 
-          {/* Step 2: Add Gmail to System */}
-          <div className="mb-8 p-4 border-4 border-brutal-black">
-            <h4 className="font-display text-2xl mb-4 text-brutal-orange">STEP 2: TAMBAH GMAIL KE SISTEM</h4>
-            <div className="space-y-4 text-sm">
-              <div className="p-3 bg-brutal-gray">
-                <ul className="list-disc list-inside ml-4 space-y-1">
-                  <li>Buka tab <strong>GMAIL ACCOUNTS</strong> di atas</li>
-                  <li>Klik <strong>+ ADD GMAIL</strong></li>
-                  <li>Masukkan email Gmail dan App Password</li>
-                  <li>Tambahkan deskripsi (opsional)</li>
-                  <li>Klik <strong>SAVE GMAIL ACCOUNT</strong></li>
+          {/* Step 3: Add to System */}
+          <div className="card-brutal">
+            <h3 className="font-display text-2xl text-brutal-black mb-4">
+              ⚙️ STEP 3: TAMBAHKAN KE SISTEM
+            </h3>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="p-4 border-4 border-brutal-black bg-brutal-gray">
+                <p className="font-bold text-lg mb-3">3.1 Tambah Email Account:</p>
+                <ul className="list-disc list-inside space-y-1 text-sm">
+                  <li>Buka tab <strong>📧 EMAIL</strong></li>
+                  <li>Klik <strong>+ ADD EMAIL</strong></li>
+                  <li>Pilih provider (Gmail, Outlook, dll)</li>
+                  <li>Masukkan email dan App Password</li>
+                  <li>Klik <strong>SAVE</strong></li>
                 </ul>
               </div>
-
-              <div className="p-3 bg-green-100 border-2 border-green-500">
-                <p className="font-bold">✅ Gmail yang sudah ready:</p>
-                <p className="font-mono">rheajoshua162@gmail.com</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Step 3: Domain Setup */}
-          <div className="mb-8 p-4 border-4 border-brutal-black">
-            <h4 className="font-display text-2xl mb-4 text-brutal-orange">STEP 3: SETUP DOMAIN</h4>
-            <div className="space-y-4 text-sm">
-              <div className="p-3 bg-brutal-gray">
-                <p className="font-bold mb-2">3.1 Setting DNS Catch-All Forwarding:</p>
-                <p className="mb-2">Di domain provider (Cloudflare, Namecheap, dll):</p>
-                <ul className="list-disc list-inside ml-4 space-y-1">
-                  <li>Buka DNS/Email settings</li>
-                  <li>Setup <strong>Catch-All Email Forwarding</strong></li>
-                  <li>Forward <code className="bg-brutal-black text-brutal-white px-1">*@yourdomain.com</code> ke Gmail yang sudah di-setup</li>
-                  <li>Contoh: <code className="bg-brutal-black text-brutal-white px-1">*@mydomain.com → rheajoshua162@gmail.com</code></li>
-                </ul>
-              </div>
-
-              <div className="p-3 bg-brutal-gray">
-                <p className="font-bold mb-2">3.2 Tambah Domain di Sistem:</p>
-                <ul className="list-disc list-inside ml-4 space-y-1">
+              <div className="p-4 border-4 border-brutal-black bg-brutal-gray">
+                <p className="font-bold text-lg mb-3">3.2 Tambah Domain:</p>
+                <ul className="list-disc list-inside space-y-1 text-sm">
                   <li>Buka tab <strong>DOMAINS</strong></li>
                   <li>Ketik nama domain (e.g., mydomain.com)</li>
-                  <li>Pilih Gmail Account yang akan menerima email</li>
+                  <li>Pilih Email Account yang menerima</li>
                   <li>Klik <strong>ADD DOMAIN</strong></li>
                 </ul>
-              </div>
-
-              <div className="p-3 bg-blue-100 border-2 border-blue-500">
-                <p className="font-bold mb-2">📧 Contoh Cloudflare Email Routing:</p>
-                <ol className="list-decimal list-inside ml-4 space-y-1">
-                  <li>Dashboard Cloudflare → Email → Email Routing</li>
-                  <li>Klik "Catch-all address"</li>
-                  <li>Action: Forward to → rheajoshua162@gmail.com</li>
-                  <li>Verify email dan Save</li>
-                </ol>
               </div>
             </div>
           </div>
 
           {/* Step 4: Test */}
-          <div className="mb-8 p-4 border-4 border-brutal-black">
-            <h4 className="font-display text-2xl mb-4 text-brutal-orange">STEP 4: TEST EMAIL</h4>
-            <div className="space-y-4 text-sm">
-              <div className="p-3 bg-brutal-gray">
-                <ul className="list-disc list-inside ml-4 space-y-1">
-                  <li>Buka homepage TempMail</li>
-                  <li>Buat inbox baru (e.g., test@yourdomain.com)</li>
-                  <li>Kirim email dari Gmail lain ke alamat tersebut</li>
-                  <li>Email akan muncul di inbox dalam 2-5 detik</li>
-                </ul>
+          <div className="card-brutal bg-brutal-orange">
+            <h3 className="font-display text-2xl text-brutal-black mb-4">
+              🧪 STEP 4: TEST EMAIL
+            </h3>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <div className="flex items-start gap-3 p-3 border-4 border-brutal-black bg-brutal-white">
+                  <span className="font-bold text-brutal-orange">1.</span>
+                  <span>Kembali ke Homepage</span>
+                </div>
+                <div className="flex items-start gap-3 p-3 border-4 border-brutal-black bg-brutal-white">
+                  <span className="font-bold text-brutal-orange">2.</span>
+                  <span>Pilih domain yang baru ditambah</span>
+                </div>
+                <div className="flex items-start gap-3 p-3 border-4 border-brutal-black bg-brutal-white">
+                  <span className="font-bold text-brutal-orange">3.</span>
+                  <span>Generate email random atau custom</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-start gap-3 p-3 border-4 border-brutal-black bg-brutal-white">
+                  <span className="font-bold text-brutal-orange">4.</span>
+                  <span>Kirim email dari HP/email lain</span>
+                </div>
+                <div className="flex items-start gap-3 p-3 border-4 border-brutal-black bg-brutal-white">
+                  <span className="font-bold text-brutal-orange">5.</span>
+                  <span>Email muncul dalam 2-5 detik! 🎉</span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Troubleshooting */}
-          <div className="p-4 border-4 border-red-500 bg-red-50">
-            <h4 className="font-display text-2xl mb-4 text-red-600">🔧 TROUBLESHOOTING</h4>
-            <div className="space-y-2 text-sm">
-              <p><strong>Email tidak masuk?</strong></p>
-              <ul className="list-disc list-inside ml-4 space-y-1">
-                <li>Pastikan IMAP enabled di Gmail</li>
-                <li>Cek App Password sudah benar</li>
-                <li>Pastikan DNS forwarding sudah aktif (bisa delay sampai 24 jam)</li>
-                <li>Cek email masuk di Gmail inbox langsung dulu</li>
-                <li>Pastikan domain sudah di-assign ke Gmail account di tab DOMAINS</li>
-              </ul>
+          {/* FAQ / Troubleshooting */}
+          <div className="card-brutal border-red-500">
+            <h3 className="font-display text-2xl text-red-600 mb-4">🔧 TROUBLESHOOTING</h3>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="p-4 border-4 border-brutal-black bg-brutal-white">
+                <p className="font-bold text-brutal-orange mb-2">Email tidak masuk?</p>
+                <ul className="text-sm space-y-1 text-brutal-dark">
+                  <li>• Pastikan catch-all sudah di-setup</li>
+                  <li>• Cek Gmail spam folder</li>
+                  <li>• Tunggu 5-10 menit untuk propagasi</li>
+                  <li>• Pastikan App Password benar</li>
+                </ul>
+              </div>
+              <div className="p-4 border-4 border-brutal-black bg-brutal-white">
+                <p className="font-bold text-brutal-orange mb-2">Apa itu catch-all?</p>
+                <p className="text-sm text-brutal-dark">
+                  Catch-all (*) artinya SEMUA email ke domain kamu (apapun@domain.com) 
+                  akan di-forward ke 1 email Gmail.
+                </p>
+              </div>
+              <div className="p-4 border-4 border-brutal-black bg-brutal-white">
+                <p className="font-bold text-brutal-orange mb-2">Berapa lama inbox aktif?</p>
+                <p className="text-sm text-brutal-dark">
+                  Inbox otomatis expire dalam 20 menit. User bisa extend atau HOLD permanent.
+                </p>
+              </div>
+              <div className="p-4 border-4 border-brutal-black bg-brutal-white">
+                <p className="font-bold text-brutal-orange mb-2">Email Provider lain?</p>
+                <p className="text-sm text-brutal-dark">
+                  Sistem mendukung Gmail, Outlook, Yahoo, Zoho, iCloud, dan custom IMAP.
+                </p>
+              </div>
             </div>
           </div>
         </div>
