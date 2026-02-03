@@ -5,11 +5,24 @@ const db = new Database(path.join(__dirname, 'tempmail.db'));
 
 // Initialize database tables
 db.exec(`
+  CREATE TABLE IF NOT EXISTS gmail_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    app_password TEXT NOT NULL,
+    imap_host TEXT DEFAULT 'imap.gmail.com',
+    imap_port INTEGER DEFAULT 993,
+    is_active INTEGER DEFAULT 1,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS domains (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     domain TEXT UNIQUE NOT NULL,
+    gmail_account_id INTEGER,
     is_active INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (gmail_account_id) REFERENCES gmail_accounts(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS inboxes (
@@ -51,10 +64,27 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_inboxes_expires ON inboxes(expires_at);
 `);
 
+// Add gmail_account_id column to domains if not exists (migration)
+try {
+  db.exec(`ALTER TABLE domains ADD COLUMN gmail_account_id INTEGER REFERENCES gmail_accounts(id) ON DELETE SET NULL`);
+} catch (e) {
+  // Column already exists
+}
+
+// Insert default Gmail account if none exists
+const gmailCount = db.prepare('SELECT COUNT(*) as count FROM gmail_accounts').get();
+if (gmailCount.count === 0) {
+  db.prepare(`
+    INSERT INTO gmail_accounts (email, app_password, description) 
+    VALUES (?, ?, ?)
+  `).run('rheajoshua162@gmail.com', 'your-app-password-here', 'Default Gmail Account');
+}
+
 // Insert default domain if none exists
 const domainCount = db.prepare('SELECT COUNT(*) as count FROM domains').get();
 if (domainCount.count === 0) {
-  db.prepare('INSERT INTO domains (domain) VALUES (?)').run('tempmail.dev');
+  const defaultGmail = db.prepare('SELECT id FROM gmail_accounts LIMIT 1').get();
+  db.prepare('INSERT INTO domains (domain, gmail_account_id) VALUES (?, ?)').run('tempmail.dev', defaultGmail?.id || null);
 }
 
 module.exports = db;

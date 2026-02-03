@@ -39,13 +39,119 @@ router.post('/login', (req, res) => {
   }
 });
 
+// ============ GMAIL ACCOUNTS ============
+
+// Get all Gmail accounts
+router.get('/gmail-accounts', authMiddleware, (req, res) => {
+  try {
+    const accounts = db.prepare(`
+      SELECT g.id, g.email, g.imap_host, g.imap_port, g.is_active, g.description, g.created_at,
+        (SELECT COUNT(*) FROM domains WHERE gmail_account_id = g.id) as domain_count
+      FROM gmail_accounts g
+      ORDER BY g.created_at DESC
+    `).all();
+    res.json(accounts);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add new Gmail account
+router.post('/gmail-accounts', authMiddleware, (req, res) => {
+  try {
+    const { email, app_password, imap_host, imap_port, description } = req.body;
+    
+    if (!email || !app_password) {
+      return res.status(400).json({ error: 'Email and App Password are required' });
+    }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+    
+    db.prepare(`
+      INSERT INTO gmail_accounts (email, app_password, imap_host, imap_port, description) 
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      email.toLowerCase(),
+      app_password,
+      imap_host || 'imap.gmail.com',
+      imap_port || 993,
+      description || ''
+    );
+    
+    const newAccount = db.prepare('SELECT id, email, imap_host, imap_port, is_active, description, created_at FROM gmail_accounts WHERE email = ?').get(email.toLowerCase());
+    res.json(newAccount);
+  } catch (error) {
+    if (error.message.includes('UNIQUE constraint')) {
+      return res.status(400).json({ error: 'Gmail account already exists' });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update Gmail account
+router.patch('/gmail-accounts/:id', authMiddleware, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { email, app_password, imap_host, imap_port, is_active, description } = req.body;
+    
+    const updates = [];
+    const params = [];
+    
+    if (email !== undefined) { updates.push('email = ?'); params.push(email.toLowerCase()); }
+    if (app_password !== undefined) { updates.push('app_password = ?'); params.push(app_password); }
+    if (imap_host !== undefined) { updates.push('imap_host = ?'); params.push(imap_host); }
+    if (imap_port !== undefined) { updates.push('imap_port = ?'); params.push(imap_port); }
+    if (is_active !== undefined) { updates.push('is_active = ?'); params.push(is_active ? 1 : 0); }
+    if (description !== undefined) { updates.push('description = ?'); params.push(description); }
+    
+    if (updates.length > 0) {
+      params.push(id);
+      db.prepare(`UPDATE gmail_accounts SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    }
+    
+    const account = db.prepare('SELECT id, email, imap_host, imap_port, is_active, description, created_at FROM gmail_accounts WHERE id = ?').get(id);
+    res.json(account);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete Gmail account
+router.delete('/gmail-accounts/:id', authMiddleware, (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if it's the last account
+    const count = db.prepare('SELECT COUNT(*) as count FROM gmail_accounts').get();
+    if (count.count <= 1) {
+      return res.status(400).json({ error: 'Cannot delete the last Gmail account' });
+    }
+    
+    // Remove association from domains
+    db.prepare('UPDATE domains SET gmail_account_id = NULL WHERE gmail_account_id = ?').run(id);
+    
+    db.prepare('DELETE FROM gmail_accounts WHERE id = ?').run(id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============ DOMAINS ============
+
 // Get all domains
 router.get('/domains', authMiddleware, (req, res) => {
   try {
     const domains = db.prepare(`
       SELECT d.*, 
+        g.email as gmail_email,
         (SELECT COUNT(*) FROM inboxes WHERE domain = d.domain AND expires_at > datetime('now')) as active_inboxes
       FROM domains d
+      LEFT JOIN gmail_accounts g ON d.gmail_account_id = g.id
       ORDER BY d.created_at DESC
     `).all();
     res.json(domains);
@@ -57,7 +163,7 @@ router.get('/domains', authMiddleware, (req, res) => {
 // Add new domain
 router.post('/domains', authMiddleware, (req, res) => {
   try {
-    const { domain } = req.body;
+    const { domain, gmail_account_id } = req.body;
     
     if (!domain) {
       return res.status(400).json({ error: 'Domain is required' });
@@ -69,9 +175,14 @@ router.post('/domains', authMiddleware, (req, res) => {
       return res.status(400).json({ error: 'Invalid domain format' });
     }
     
-    db.prepare('INSERT INTO domains (domain) VALUES (?)').run(domain.toLowerCase());
+    db.prepare('INSERT INTO domains (domain, gmail_account_id) VALUES (?, ?)').run(domain.toLowerCase(), gmail_account_id || null);
     
-    const newDomain = db.prepare('SELECT * FROM domains WHERE domain = ?').get(domain.toLowerCase());
+    const newDomain = db.prepare(`
+      SELECT d.*, g.email as gmail_email 
+      FROM domains d 
+      LEFT JOIN gmail_accounts g ON d.gmail_account_id = g.id
+      WHERE d.domain = ?
+    `).get(domain.toLowerCase());
     res.json(newDomain);
   } catch (error) {
     if (error.message.includes('UNIQUE constraint')) {
@@ -81,15 +192,29 @@ router.post('/domains', authMiddleware, (req, res) => {
   }
 });
 
-// Toggle domain active status
+// Update domain (toggle status, assign gmail account)
 router.patch('/domains/:id', authMiddleware, (req, res) => {
   try {
     const { id } = req.params;
-    const { is_active } = req.body;
+    const { is_active, gmail_account_id } = req.body;
     
-    db.prepare('UPDATE domains SET is_active = ? WHERE id = ?').run(is_active ? 1 : 0, id);
+    const updates = [];
+    const params = [];
     
-    const domain = db.prepare('SELECT * FROM domains WHERE id = ?').get(id);
+    if (is_active !== undefined) { updates.push('is_active = ?'); params.push(is_active ? 1 : 0); }
+    if (gmail_account_id !== undefined) { updates.push('gmail_account_id = ?'); params.push(gmail_account_id || null); }
+    
+    if (updates.length > 0) {
+      params.push(id);
+      db.prepare(`UPDATE domains SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    }
+    
+    const domain = db.prepare(`
+      SELECT d.*, g.email as gmail_email 
+      FROM domains d 
+      LEFT JOIN gmail_accounts g ON d.gmail_account_id = g.id
+      WHERE d.id = ?
+    `).get(id);
     res.json(domain);
   } catch (error) {
     res.status(500).json({ error: error.message });
