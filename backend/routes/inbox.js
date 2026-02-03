@@ -78,9 +78,19 @@ router.post('/random', (req, res) => {
   try {
     const { domain } = req.body;
     
-    // Get first active domain if not specified
     let selectedDomain = domain;
-    if (!selectedDomain) {
+    
+    // If domain is provided, validate it exists and is active
+    if (selectedDomain) {
+      const domainExists = db.prepare(
+        'SELECT domain FROM domains WHERE domain = ? AND is_active = 1'
+      ).get(selectedDomain);
+      
+      if (!domainExists) {
+        return res.status(400).json({ error: `Domain "${selectedDomain}" is not available` });
+      }
+    } else {
+      // Get first active domain if not specified
       const firstDomain = db.prepare(
         'SELECT domain FROM domains WHERE is_active = 1 LIMIT 1'
       ).get();

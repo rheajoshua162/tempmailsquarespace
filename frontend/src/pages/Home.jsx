@@ -21,7 +21,12 @@ export default function Home() {
   }, [domains])
 
   const handleGenerateRandom = async () => {
-    const result = await createRandomInbox(selectedDomain)
+    // Pastikan domain terisi
+    const domainToUse = selectedDomain || (domains.length > 0 ? domains[0] : null)
+    if (!domainToUse) {
+      return // No domain available
+    }
+    const result = await createRandomInbox(domainToUse)
     if (result) {
       navigate(`/inbox/${result.sessionId}`)
     }
