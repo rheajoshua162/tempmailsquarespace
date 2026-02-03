@@ -9,7 +9,11 @@ const inboxRoutes = require('./routes/inbox');
 const adminRoutes = require('./routes/admin');
 const { initSocket } = require('./socket');
 const imapService = require('./imapService');
+const smtpServer = require('./smtpServer');
 const { startCleanupJob } = require('./cleanup');
+
+// Email mode: 'smtp' (receive directly) or 'imap' (fetch from Gmail)
+const EMAIL_MODE = process.env.EMAIL_MODE || 'imap';
 
 const app = express();
 const server = http.createServer(app);
@@ -29,7 +33,9 @@ app.use('/api/admin', adminRoutes);
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok', 
-    imapConnected: imapService.isConnected,
+    emailMode: EMAIL_MODE,
+    imapConnected: EMAIL_MODE === 'imap' ? imapService.isConnected : null,
+    smtpRunning: EMAIL_MODE === 'smtp',
     timestamp: new Date().toISOString()
   });
 });
@@ -52,19 +58,36 @@ startCleanupJob();
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📧 Email mode: ${EMAIL_MODE.toUpperCase()}`);
   
-  // Connect to IMAP
-  if (process.env.GMAIL_USER && process.env.GMAIL_PASS) {
-    imapService.connect();
+  if (EMAIL_MODE === 'smtp') {
+    // Start SMTP server to receive emails directly
+    const { getSocketIO } = require('./socket');
+    smtpServer.on('newEmail', ({ sessionId, email }) => {
+      const io = getSocketIO();
+      if (io) {
+        io.to(sessionId).emit('newEmail', email);
+      }
+    });
+    smtpServer.start();
   } else {
-    console.log('⚠️ GMAIL_USER and GMAIL_PASS not set - IMAP disabled');
+    // Connect to IMAP (default mode)
+    if (process.env.GMAIL_USER && process.env.GMAIL_PASS) {
+      imapService.connect();
+    } else {
+      console.log('⚠️ GMAIL_USER and GMAIL_PASS not set - IMAP disabled');
+    }
   }
 });
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('📴 Shutting down...');
-  await imapService.disconnect();
+  if (EMAIL_MODE === 'smtp') {
+    smtpServer.stop();
+  } else {
+    await imapService.disconnect();
+  }
   server.close(() => {
     process.exit(0);
   });
