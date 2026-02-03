@@ -6,8 +6,9 @@ function startCleanupJob() {
   cron.schedule('* * * * *', () => {
     try {
       // Delete expired inboxes (cascade deletes emails and attachments)
+      // Skip held inboxes - they are protected from auto-deletion
       const result = db.prepare(`
-        DELETE FROM inboxes WHERE expires_at <= datetime('now')
+        DELETE FROM inboxes WHERE expires_at <= datetime('now') AND is_held = 0
       `).run();
       
       if (result.changes > 0) {

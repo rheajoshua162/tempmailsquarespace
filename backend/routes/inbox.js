@@ -223,9 +223,10 @@ router.get('/:sessionId', (req, res) => {
   try {
     const { sessionId } = req.params;
     
+    // For held inboxes, ignore expiry check
     const inbox = db.prepare(`
-      SELECT session_id, username, domain, expires_at FROM inboxes 
-      WHERE session_id = ? AND expires_at > datetime('now')
+      SELECT session_id, username, domain, expires_at, is_held FROM inboxes 
+      WHERE session_id = ? AND (expires_at > datetime('now') OR is_held = 1)
     `).get(sessionId);
     
     if (!inbox) {
@@ -235,7 +236,8 @@ router.get('/:sessionId', (req, res) => {
     res.json({
       sessionId: inbox.session_id,
       email: `${inbox.username}@${inbox.domain}`,
-      expiresAt: inbox.expires_at
+      expiresAt: inbox.expires_at,
+      isHeld: !!inbox.is_held
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -248,7 +250,7 @@ router.get('/:sessionId/emails', (req, res) => {
     const { sessionId } = req.params;
     
     const inbox = db.prepare(`
-      SELECT id FROM inboxes WHERE session_id = ? AND expires_at > datetime('now')
+      SELECT id FROM inboxes WHERE session_id = ? AND (expires_at > datetime('now') OR is_held = 1)
     `).get(sessionId);
     
     if (!inbox) {
@@ -275,7 +277,7 @@ router.get('/:sessionId/emails/:emailId', (req, res) => {
     const { sessionId, emailId } = req.params;
     
     const inbox = db.prepare(`
-      SELECT id FROM inboxes WHERE session_id = ? AND expires_at > datetime('now')
+      SELECT id FROM inboxes WHERE session_id = ? AND (expires_at > datetime('now') OR is_held = 1)
     `).get(sessionId);
     
     if (!inbox) {
@@ -310,7 +312,7 @@ router.delete('/:sessionId/emails/:emailId', (req, res) => {
     const { sessionId, emailId } = req.params;
     
     const inbox = db.prepare(`
-      SELECT id FROM inboxes WHERE session_id = ? AND expires_at > datetime('now')
+      SELECT id FROM inboxes WHERE session_id = ? AND (expires_at > datetime('now') OR is_held = 1)
     `).get(sessionId);
     
     if (!inbox) {
@@ -337,7 +339,7 @@ router.get('/:sessionId/attachments/:attachmentId', (req, res) => {
     const { sessionId, attachmentId } = req.params;
     
     const inbox = db.prepare(`
-      SELECT id FROM inboxes WHERE session_id = ? AND expires_at > datetime('now')
+      SELECT id FROM inboxes WHERE session_id = ? AND (expires_at > datetime('now') OR is_held = 1)
     `).get(sessionId);
     
     if (!inbox) {
@@ -370,7 +372,7 @@ router.post('/:sessionId/extend', (req, res) => {
     
     const result = db.prepare(`
       UPDATE inboxes SET expires_at = datetime('now', '+${expiryMinutes} minutes')
-      WHERE session_id = ? AND expires_at > datetime('now')
+      WHERE session_id = ? AND (expires_at > datetime('now') OR is_held = 1)
     `).run(sessionId);
     
     if (result.changes === 0) {
@@ -378,14 +380,140 @@ router.post('/:sessionId/extend', (req, res) => {
     }
     
     const inbox = db.prepare(`
-      SELECT session_id, username, domain, expires_at FROM inboxes WHERE session_id = ?
+      SELECT session_id, username, domain, expires_at, is_held FROM inboxes WHERE session_id = ?
     `).get(sessionId);
     
     res.json({
       sessionId: inbox.session_id,
       email: `${inbox.username}@${inbox.domain}`,
-      expiresAt: inbox.expires_at
+      expiresAt: inbox.expires_at,
+      isHeld: !!inbox.is_held
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Hold inbox (permanent protection from auto-delete)
+router.post('/:sessionId/hold', (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { password } = req.body;
+    
+    // Get hold password from environment variable
+    const holdPassword = process.env.HOLD_PASSWORD || 'sempak007';
+    
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
+    }
+    
+    if (password !== holdPassword) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+    
+    // Check if inbox exists (for held inboxes, ignore expiry)
+    const inbox = db.prepare(`
+      SELECT id, session_id, username, domain, expires_at, is_held FROM inboxes 
+      WHERE session_id = ?
+    `).get(sessionId);
+    
+    if (!inbox) {
+      return res.status(404).json({ error: 'Inbox not found' });
+    }
+    
+    if (inbox.is_held) {
+      return res.status(400).json({ error: 'Inbox is already held' });
+    }
+    
+    // Set is_held to true and extend expiry far into the future (100 years)
+    db.prepare(`
+      UPDATE inboxes SET is_held = 1, expires_at = datetime('now', '+100 years')
+      WHERE session_id = ?
+    `).run(sessionId);
+    
+    const updatedInbox = db.prepare(`
+      SELECT session_id, username, domain, expires_at, is_held FROM inboxes WHERE session_id = ?
+    `).get(sessionId);
+    
+    res.json({
+      sessionId: updatedInbox.session_id,
+      email: `${updatedInbox.username}@${updatedInbox.domain}`,
+      expiresAt: updatedInbox.expires_at,
+      isHeld: true,
+      message: 'Inbox is now held permanently'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Unhold inbox (remove protection, will auto-delete when expired)
+router.post('/:sessionId/unhold', (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { password } = req.body;
+    
+    // Get hold password from environment variable
+    const holdPassword = process.env.HOLD_PASSWORD || 'sempak007';
+    
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
+    }
+    
+    if (password !== holdPassword) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+    
+    const inbox = db.prepare(`
+      SELECT id, session_id, username, domain, is_held FROM inboxes WHERE session_id = ?
+    `).get(sessionId);
+    
+    if (!inbox) {
+      return res.status(404).json({ error: 'Inbox not found' });
+    }
+    
+    if (!inbox.is_held) {
+      return res.status(400).json({ error: 'Inbox is not held' });
+    }
+    
+    const expiryMinutes = parseInt(process.env.INBOX_EXPIRY_MINUTES) || 20;
+    
+    // Remove hold and reset expiry
+    db.prepare(`
+      UPDATE inboxes SET is_held = 0, expires_at = datetime('now', '+${expiryMinutes} minutes')
+      WHERE session_id = ?
+    `).run(sessionId);
+    
+    const updatedInbox = db.prepare(`
+      SELECT session_id, username, domain, expires_at, is_held FROM inboxes WHERE session_id = ?
+    `).get(sessionId);
+    
+    res.json({
+      sessionId: updatedInbox.session_id,
+      email: `${updatedInbox.username}@${updatedInbox.domain}`,
+      expiresAt: updatedInbox.expires_at,
+      isHeld: false,
+      message: 'Inbox hold removed. Will expire normally.'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all held inboxes (for admin/overview)
+router.get('/held/list', (req, res) => {
+  try {
+    const heldInboxes = db.prepare(`
+      SELECT session_id, username, domain, created_at FROM inboxes 
+      WHERE is_held = 1
+      ORDER BY created_at DESC
+    `).all();
+    
+    res.json(heldInboxes.map(inbox => ({
+      sessionId: inbox.session_id,
+      email: `${inbox.username}@${inbox.domain}`,
+      createdAt: inbox.created_at
+    })));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

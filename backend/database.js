@@ -79,6 +79,13 @@ try {
   // Column already exists
 }
 
+// Add is_held column to inboxes if not exists (migration for HOLD feature)
+try {
+  db.exec(`ALTER TABLE inboxes ADD COLUMN is_held INTEGER DEFAULT 0`);
+} catch (e) {
+  // Column already exists
+}
+
 // Insert default Gmail account if none exists
 const gmailCount = db.prepare('SELECT COUNT(*) as count FROM gmail_accounts').get();
 if (gmailCount.count === 0) {

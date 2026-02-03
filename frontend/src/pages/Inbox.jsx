@@ -8,13 +8,17 @@ export default function Inbox() {
   const navigate = useNavigate()
   const { 
     inbox, emails, selectedEmail, 
-    getInbox, fetchEmails, addEmail, getEmail, deleteEmail, extendInbox, 
+    getInbox, fetchEmails, addEmail, getEmail, deleteEmail, extendInbox,
+    holdInbox, unholdInbox, loading,
     clearInbox, clearSelectedEmail, error, clearError 
   } = useStore()
   
   const [timeLeft, setTimeLeft] = useState('')
   const [socket, setSocket] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [showHoldModal, setShowHoldModal] = useState(false)
+  const [holdPassword, setHoldPassword] = useState('')
+  const [isUnholdMode, setIsUnholdMode] = useState(false)
 
   // Load inbox and connect socket
   useEffect(() => {
@@ -65,6 +69,12 @@ export default function Inbox() {
   useEffect(() => {
     if (!inbox?.expiresAt) return
     
+    // Skip timer if inbox is held (permanent)
+    if (inbox?.isHeld) {
+      setTimeLeft('∞')
+      return
+    }
+    
     const updateTimer = () => {
       const now = new Date()
       const expires = new Date(inbox.expiresAt + 'Z')
@@ -83,7 +93,7 @@ export default function Inbox() {
     updateTimer()
     const interval = setInterval(updateTimer, 1000)
     return () => clearInterval(interval)
-  }, [inbox?.expiresAt])
+  }, [inbox?.expiresAt, inbox?.isHeld])
 
   // Auto-refresh emails every 10 seconds
   useEffect(() => {
@@ -103,6 +113,34 @@ export default function Inbox() {
 
   const handleExtend = async () => {
     await extendInbox(sessionId)
+  }
+
+  const handleHold = async (e) => {
+    e.preventDefault()
+    if (!holdPassword) return
+    const result = await holdInbox(sessionId, holdPassword)
+    if (result) {
+      setShowHoldModal(false)
+      setHoldPassword('')
+    }
+  }
+
+  const handleUnhold = async (e) => {
+    e.preventDefault()
+    if (!holdPassword) return
+    const result = await unholdInbox(sessionId, holdPassword)
+    if (result) {
+      setShowHoldModal(false)
+      setHoldPassword('')
+      setIsUnholdMode(false)
+    }
+  }
+
+  const openHoldModal = (unhold = false) => {
+    setIsUnholdMode(unhold)
+    setHoldPassword('')
+    clearError()
+    setShowHoldModal(true)
   }
 
   const handleDeleteEmail = async (emailId, e) => {
@@ -160,13 +198,39 @@ export default function Inbox() {
           </div>
           
           <div className="flex flex-col items-end gap-2">
-            <div className="badge-brutal flex items-center gap-2">
-              <span>⏱</span>
-              <span>{timeLeft}</span>
+            {inbox.isHeld ? (
+              <div className="badge-brutal bg-green-500 text-white flex items-center gap-2">
+                <span>🔒</span>
+                <span>HELD FOREVER</span>
+              </div>
+            ) : (
+              <div className="badge-brutal flex items-center gap-2">
+                <span>⏱</span>
+                <span>{timeLeft}</span>
+              </div>
+            )}
+            <div className="flex gap-2">
+              {!inbox.isHeld && (
+                <button onClick={handleExtend} className="btn-brutal-outline text-sm py-2">
+                  + EXTEND
+                </button>
+              )}
+              {inbox.isHeld ? (
+                <button 
+                  onClick={() => openHoldModal(true)} 
+                  className="btn-brutal-outline text-sm py-2 border-red-500 text-red-500 hover:bg-red-50"
+                >
+                  🔓 UNHOLD
+                </button>
+              ) : (
+                <button 
+                  onClick={() => openHoldModal(false)} 
+                  className="btn-brutal-outline text-sm py-2 border-green-500 text-green-700 hover:bg-green-50"
+                >
+                  🔒 HOLD
+                </button>
+              )}
             </div>
-            <button onClick={handleExtend} className="btn-brutal-outline text-sm py-2">
-              + EXTEND TIME
-            </button>
           </div>
         </div>
       </div>
@@ -314,6 +378,80 @@ export default function Inbox() {
       <div className="text-center mt-6 text-sm text-brutal-dark">
         <p>📡 Real-time updates enabled • Auto-refresh every 10 seconds</p>
       </div>
+
+      {/* Hold/Unhold Modal */}
+      {showHoldModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="card-brutal bg-white max-w-md w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display text-2xl text-brutal-black">
+                {isUnholdMode ? '🔓 UNHOLD INBOX' : '🔒 HOLD INBOX'}
+              </h3>
+              <button
+                onClick={() => { setShowHoldModal(false); setHoldPassword(''); clearError(); }}
+                className="p-2 border-3 border-brutal-black bg-brutal-white hover:bg-red-100"
+              >
+                ✕
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 border-3 border-red-500 bg-red-100 text-red-700 font-bold">
+                {error}
+              </div>
+            )}
+
+            <div className="mb-4 p-4 border-4 border-dashed border-brutal-black bg-brutal-gray">
+              {isUnholdMode ? (
+                <p className="text-sm text-brutal-dark">
+                  ⚠️ <strong>Melepas HOLD</strong> akan membuat inbox kembali memiliki waktu expiry normal 
+                  dan bisa terhapus otomatis.
+                </p>
+              ) : (
+                <p className="text-sm text-brutal-dark">
+                  ✅ <strong>HOLD</strong> akan membuat inbox ini <strong>permanent</strong> dan tidak akan 
+                  terhapus otomatis. Username akan dikunci selamanya.
+                </p>
+              )}
+            </div>
+
+            <form onSubmit={isUnholdMode ? handleUnhold : handleHold}>
+              <div className="mb-4">
+                <label className="block font-bold text-brutal-black mb-2 uppercase tracking-wider">
+                  Password Admin
+                </label>
+                <input
+                  type="password"
+                  value={holdPassword}
+                  onChange={(e) => setHoldPassword(e.target.value)}
+                  placeholder="Masukkan password..."
+                  className="input-brutal w-full"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowHoldModal(false); setHoldPassword(''); clearError(); }}
+                  className="flex-1 py-3 border-4 border-brutal-black bg-brutal-white font-bold uppercase hover:bg-brutal-gray"
+                >
+                  BATAL
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || !holdPassword}
+                  className={`flex-1 btn-brutal disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isUnholdMode ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-green-500 text-white hover:bg-green-600'
+                  }`}
+                >
+                  {loading ? 'PROCESSING...' : (isUnholdMode ? '🔓 UNHOLD' : '🔒 HOLD')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -197,6 +197,44 @@ export const useStore = create((set, get) => ({
     }
   },
 
+  // Hold inbox (permanent protection)
+  holdInbox: async (sessionId, password) => {
+    set({ loading: true, error: null })
+    try {
+      const res = await fetch(`${API_BASE}/inbox/${sessionId}/hold`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      set({ inbox: data, loading: false })
+      return data
+    } catch (err) {
+      set({ error: err.message, loading: false })
+      return null
+    }
+  },
+
+  // Unhold inbox (remove protection)
+  unholdInbox: async (sessionId, password) => {
+    set({ loading: true, error: null })
+    try {
+      const res = await fetch(`${API_BASE}/inbox/${sessionId}/unhold`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      set({ inbox: data, loading: false })
+      return data
+    } catch (err) {
+      set({ error: err.message, loading: false })
+      return null
+    }
+  },
+
   // Clear inbox
   clearInbox: () => set({ inbox: null, emails: [], selectedEmail: null }),
   clearSelectedEmail: () => set({ selectedEmail: null })
