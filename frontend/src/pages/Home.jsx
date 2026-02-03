@@ -4,11 +4,15 @@ import { useStore } from '../store/useStore'
 
 export default function Home() {
   const navigate = useNavigate()
-  const { domains, fetchDomains, createRandomInbox, createCustomInbox, loading, error, clearError } = useStore()
+  const { domains, fetchDomains, createRandomInbox, createCustomInbox, reclaimInbox, loading, error, clearError } = useStore()
   
   const [selectedDomain, setSelectedDomain] = useState('')
   const [customUsername, setCustomUsername] = useState('')
   const [isCustomMode, setIsCustomMode] = useState(false)
+  const [pin, setPin] = useState('')
+  const [showPinInput, setShowPinInput] = useState(false)
+  const [isReclaimMode, setIsReclaimMode] = useState(false)
+  const [reclaimPin, setReclaimPin] = useState('')
 
   useEffect(() => {
     fetchDomains()
@@ -36,7 +40,30 @@ export default function Home() {
     e.preventDefault()
     if (!customUsername.trim()) return
     
-    const result = await createCustomInbox(customUsername.trim().toLowerCase(), selectedDomain)
+    const result = await createCustomInbox(
+      customUsername.trim().toLowerCase(), 
+      selectedDomain,
+      showPinInput && pin ? pin : null
+    )
+    if (result) {
+      if (result.needsReclaim) {
+        // Inbox exists with PIN, switch to reclaim mode
+        setIsReclaimMode(true)
+        return
+      }
+      navigate(`/inbox/${result.sessionId}`)
+    }
+  }
+
+  const handleReclaim = async (e) => {
+    e.preventDefault()
+    if (!customUsername.trim() || !reclaimPin) return
+    
+    const result = await reclaimInbox(
+      customUsername.trim().toLowerCase(),
+      selectedDomain,
+      reclaimPin
+    )
     if (result) {
       navigate(`/inbox/${result.sessionId}`)
     }
@@ -109,36 +136,145 @@ export default function Home() {
 
         {/* Random or Custom Input */}
         {isCustomMode ? (
-          <form onSubmit={handleCreateCustom}>
-            <div className="mb-6">
-              <label className="block font-bold text-brutal-black mb-2 uppercase tracking-wider">
-                Custom Username
-              </label>
-              <div className="flex">
-                <input
-                  type="text"
-                  value={customUsername}
-                  onChange={(e) => setCustomUsername(e.target.value.replace(/[^a-z0-9._-]/gi, ''))}
-                  placeholder="yourname"
-                  className="input-brutal flex-1 border-r-0"
-                  maxLength={30}
-                />
-                <span className="px-4 py-3 border-4 border-brutal-black bg-brutal-gray font-bold">
-                  @{selectedDomain}
-                </span>
-              </div>
-              <p className="text-sm text-brutal-dark mt-2">
-                3-30 characters, letters, numbers, dots, hyphens, underscores
-              </p>
-            </div>
-            <button
-              type="submit"
-              disabled={loading || !customUsername.trim()}
-              className="btn-brutal w-full disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'CREATING...' : 'CREATE INBOX →'}
-            </button>
-          </form>
+          <>
+            {/* Reclaim Mode */}
+            {isReclaimMode ? (
+              <form onSubmit={handleReclaim}>
+                <div className="mb-4 p-4 border-4 border-brutal-orange bg-orange-50">
+                  <p className="font-bold text-brutal-black mb-2">🔐 RECLAIM YOUR INBOX</p>
+                  <p className="text-sm text-brutal-dark">
+                    This inbox is protected with a PIN. Enter your PIN to access it.
+                  </p>
+                </div>
+                <div className="mb-4">
+                  <label className="block font-bold text-brutal-black mb-2 uppercase tracking-wider">
+                    Username
+                  </label>
+                  <div className="flex">
+                    <input
+                      type="text"
+                      value={customUsername}
+                      onChange={(e) => setCustomUsername(e.target.value.replace(/[^a-z0-9._-]/gi, ''))}
+                      placeholder="yourname"
+                      className="input-brutal flex-1 border-r-0"
+                      maxLength={30}
+                    />
+                    <span className="px-4 py-3 border-4 border-brutal-black bg-brutal-gray font-bold">
+                      @{selectedDomain}
+                    </span>
+                  </div>
+                </div>
+                <div className="mb-6">
+                  <label className="block font-bold text-brutal-black mb-2 uppercase tracking-wider">
+                    Enter PIN
+                  </label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    value={reclaimPin}
+                    onChange={(e) => setReclaimPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                    placeholder="••••"
+                    className="input-brutal w-full text-center text-2xl tracking-widest"
+                    maxLength={8}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setIsReclaimMode(false); setReclaimPin(''); clearError(); }}
+                    className="flex-1 py-3 border-4 border-brutal-black bg-brutal-white font-bold uppercase hover:bg-brutal-gray"
+                  >
+                    ← BACK
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading || !reclaimPin}
+                    className="flex-1 btn-brutal disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? 'VERIFYING...' : 'RECLAIM →'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleCreateCustom}>
+                <div className="mb-4">
+                  <label className="block font-bold text-brutal-black mb-2 uppercase tracking-wider">
+                    Custom Username
+                  </label>
+                  <div className="flex">
+                    <input
+                      type="text"
+                      value={customUsername}
+                      onChange={(e) => setCustomUsername(e.target.value.replace(/[^a-z0-9._-]/gi, ''))}
+                      placeholder="yourname"
+                      className="input-brutal flex-1 border-r-0"
+                      maxLength={30}
+                    />
+                    <span className="px-4 py-3 border-4 border-brutal-black bg-brutal-gray font-bold">
+                      @{selectedDomain}
+                    </span>
+                  </div>
+                  <p className="text-sm text-brutal-dark mt-2">
+                    3-30 characters, letters, numbers, dots, hyphens, underscores
+                  </p>
+                </div>
+
+                {/* PIN Protection Toggle */}
+                <div className="mb-6">
+                  <button
+                    type="button"
+                    onClick={() => setShowPinInput(!showPinInput)}
+                    className="flex items-center gap-2 text-brutal-dark hover:text-brutal-black font-bold text-sm uppercase"
+                  >
+                    <span className={`w-5 h-5 border-3 border-brutal-black flex items-center justify-center ${showPinInput ? 'bg-brutal-orange' : 'bg-brutal-white'}`}>
+                      {showPinInput && '✓'}
+                    </span>
+                    🔐 Set PIN for Recovery (optional)
+                  </button>
+                  
+                  {showPinInput && (
+                    <div className="mt-3 p-4 border-4 border-dashed border-brutal-black bg-brutal-gray">
+                      <label className="block font-bold text-brutal-black mb-2 uppercase tracking-wider text-sm">
+                        PIN (4-8 digits)
+                      </label>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        value={pin}
+                        onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                        placeholder="••••"
+                        className="input-brutal w-full text-center text-xl tracking-widest"
+                        minLength={4}
+                        maxLength={8}
+                      />
+                      <p className="text-xs text-brutal-dark mt-2">
+                        💡 PIN allows you to reclaim this inbox if you lose access
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || !customUsername.trim() || (showPinInput && pin && pin.length < 4)}
+                  className="btn-brutal w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'CREATING...' : 'CREATE INBOX →'}
+                </button>
+
+                {/* Already have PIN? Reclaim button */}
+                <div className="mt-4 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setIsReclaimMode(true)}
+                    className="text-brutal-dark hover:text-brutal-orange font-bold text-sm uppercase underline"
+                  >
+                    🔐 Already have a PIN? Reclaim your inbox
+                  </button>
+                </div>
+              </form>
+            )}
+          </>
         ) : (
           <div>
             <div className="mb-6 p-4 border-4 border-dashed border-brutal-black bg-brutal-gray text-center">

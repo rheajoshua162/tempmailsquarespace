@@ -46,14 +46,58 @@ export const useStore = create((set, get) => ({
     }
   },
 
-  // Create custom inbox
-  createCustomInbox: async (username, domain) => {
+  // Create custom inbox (with optional PIN)
+  createCustomInbox: async (username, domain, pin = null) => {
     set({ loading: true, error: null })
     try {
+      const body = { username, domain }
+      if (pin) body.pin = pin
+      
       const res = await fetch(`${API_BASE}/inbox/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        // Check if inbox has PIN and suggest reclaim
+        if (data.hasPin) {
+          set({ error: data.message || data.error, loading: false })
+          return { needsReclaim: true }
+        }
+        throw new Error(data.error)
+      }
+      set({ inbox: data, loading: false })
+      return data
+    } catch (err) {
+      set({ error: err.message, loading: false })
+      return null
+    }
+  },
+
+  // Check if inbox exists and has PIN
+  checkInbox: async (username, domain) => {
+    try {
+      const res = await fetch(`${API_BASE}/inbox/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, domain })
+      })
+      const data = await res.json()
+      return data
+    } catch (err) {
+      return { exists: false, hasPin: false }
+    }
+  },
+
+  // Reclaim inbox with PIN
+  reclaimInbox: async (username, domain, pin) => {
+    set({ loading: true, error: null })
+    try {
+      const res = await fetch(`${API_BASE}/inbox/reclaim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, domain, pin })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)

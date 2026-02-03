@@ -30,6 +30,7 @@ db.exec(`
     session_id TEXT UNIQUE NOT NULL,
     username TEXT NOT NULL,
     domain TEXT NOT NULL,
+    pin_hash TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     expires_at DATETIME NOT NULL
   );
@@ -67,6 +68,13 @@ db.exec(`
 // Add gmail_account_id column to domains if not exists (migration)
 try {
   db.exec(`ALTER TABLE domains ADD COLUMN gmail_account_id INTEGER REFERENCES gmail_accounts(id) ON DELETE SET NULL`);
+} catch (e) {
+  // Column already exists
+}
+
+// Add pin_hash column to inboxes if not exists (migration)
+try {
+  db.exec(`ALTER TABLE inboxes ADD COLUMN pin_hash TEXT`);
 } catch (e) {
   // Column already exists
 }

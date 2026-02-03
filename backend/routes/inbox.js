@@ -1,7 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const db = require('../database');
+
+// Simple PIN hashing
+function hashPin(pin) {
+  return crypto.createHash('sha256').update(pin).digest('hex');
+}
 
 // Get all active domains
 router.get('/domains', (req, res) => {
@@ -18,7 +24,7 @@ router.get('/domains', (req, res) => {
 // Create new inbox
 router.post('/create', (req, res) => {
   try {
-    const { username, domain } = req.body;
+    const { username, domain, pin } = req.body;
     
     if (!username || !domain) {
       return res.status(400).json({ error: 'Username and domain are required' });
@@ -32,6 +38,11 @@ router.post('/create', (req, res) => {
       });
     }
     
+    // Validate PIN if provided
+    if (pin && (pin.length < 4 || pin.length > 8 || !/^\d+$/.test(pin))) {
+      return res.status(400).json({ error: 'PIN must be 4-8 digits' });
+    }
+    
     // Check if domain exists
     const domainExists = db.prepare(
       'SELECT id FROM domains WHERE domain = ? AND is_active = 1'
@@ -43,30 +54,109 @@ router.post('/create', (req, res) => {
     
     // Check if username is already taken for this domain
     const existingInbox = db.prepare(`
-      SELECT id FROM inboxes 
+      SELECT id, pin_hash FROM inboxes 
       WHERE username = ? AND domain = ? AND expires_at > datetime('now')
     `).get(username.toLowerCase(), domain);
     
     if (existingInbox) {
+      // Check if this inbox has a PIN set - suggest reclaim
+      if (existingInbox.pin_hash) {
+        return res.status(400).json({ 
+          error: 'Username already taken', 
+          hasPin: true,
+          message: 'This inbox has a PIN. Use RECLAIM to access it.'
+        });
+      }
       return res.status(400).json({ error: 'Username already taken' });
     }
     
     const sessionId = uuidv4();
     const expiryMinutes = parseInt(process.env.INBOX_EXPIRY_MINUTES) || 20;
+    const pinHash = pin ? hashPin(pin) : null;
     
     db.prepare(`
-      INSERT INTO inboxes (session_id, username, domain, expires_at)
-      VALUES (?, ?, ?, datetime('now', '+${expiryMinutes} minutes'))
-    `).run(sessionId, username.toLowerCase(), domain);
+      INSERT INTO inboxes (session_id, username, domain, pin_hash, expires_at)
+      VALUES (?, ?, ?, ?, datetime('now', '+${expiryMinutes} minutes'))
+    `).run(sessionId, username.toLowerCase(), domain, pinHash);
     
     const inbox = db.prepare(`
-      SELECT session_id, username, domain, expires_at FROM inboxes WHERE session_id = ?
+      SELECT session_id, username, domain, expires_at, pin_hash FROM inboxes WHERE session_id = ?
     `).get(sessionId);
     
     res.json({
       sessionId: inbox.session_id,
       email: `${inbox.username}@${inbox.domain}`,
-      expiresAt: inbox.expires_at
+      expiresAt: inbox.expires_at,
+      hasPin: !!inbox.pin_hash
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reclaim inbox with PIN
+router.post('/reclaim', (req, res) => {
+  try {
+    const { username, domain, pin } = req.body;
+    
+    if (!username || !domain || !pin) {
+      return res.status(400).json({ error: 'Username, domain, and PIN are required' });
+    }
+    
+    // Find existing inbox
+    const existingInbox = db.prepare(`
+      SELECT id, session_id, username, domain, pin_hash, expires_at FROM inboxes 
+      WHERE username = ? AND domain = ? AND expires_at > datetime('now')
+    `).get(username.toLowerCase(), domain);
+    
+    if (!existingInbox) {
+      return res.status(404).json({ error: 'Inbox not found or expired' });
+    }
+    
+    if (!existingInbox.pin_hash) {
+      return res.status(400).json({ error: 'This inbox does not have a PIN set' });
+    }
+    
+    // Verify PIN
+    if (hashPin(pin) !== existingInbox.pin_hash) {
+      return res.status(401).json({ error: 'Invalid PIN' });
+    }
+    
+    // Generate new session ID for security
+    const newSessionId = uuidv4();
+    
+    db.prepare(`
+      UPDATE inboxes SET session_id = ? WHERE id = ?
+    `).run(newSessionId, existingInbox.id);
+    
+    res.json({
+      sessionId: newSessionId,
+      email: `${existingInbox.username}@${existingInbox.domain}`,
+      expiresAt: existingInbox.expires_at,
+      hasPin: true
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Check if inbox exists and has PIN (for UI hints)
+router.post('/check', (req, res) => {
+  try {
+    const { username, domain } = req.body;
+    
+    if (!username || !domain) {
+      return res.status(400).json({ error: 'Username and domain are required' });
+    }
+    
+    const existingInbox = db.prepare(`
+      SELECT id, pin_hash FROM inboxes 
+      WHERE username = ? AND domain = ? AND expires_at > datetime('now')
+    `).get(username.toLowerCase(), domain);
+    
+    res.json({
+      exists: !!existingInbox,
+      hasPin: existingInbox ? !!existingInbox.pin_hash : false
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
