@@ -21,12 +21,27 @@ export default function Layout() {
             </h1>
           </Link>
           
-          <nav className="flex gap-4">
+          <nav className="flex gap-2 md:gap-4">
+            <a 
+              href="https://mrguest.pro/" 
+              className="px-4 py-3 font-bold border-4 border-brutal-black bg-brutal-black text-brutal-orange 
+                         shadow-brutal hover:shadow-none hover:translate-x-1 hover:translate-y-1 
+                         transition-all duration-100 uppercase text-sm flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M3 12l9-9 9 9" />
+                <path d="M9 21V12h6v9" />
+              </svg>
+              <span className="hidden md:inline">MAIN MENU</span>
+            </a>
             {location.pathname !== '/' && (
               <Link to="/" className="btn-brutal-outline text-sm">
                 ← NEW INBOX
               </Link>
             )}
+            <Link to="/setup" className="btn-brutal-outline text-sm">
+              📖 SETUP
+            </Link>
             <Link to="/admin" className="btn-brutal-outline text-sm">
               ADMIN
             </Link>

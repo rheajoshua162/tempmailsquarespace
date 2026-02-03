@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 
 export default function Home() {
@@ -165,6 +165,17 @@ export default function Home() {
             <p className="text-brutal-dark text-sm mt-1">{feature.desc}</p>
           </div>
         ))}
+      </div>
+
+      {/* Setup Guide Banner */}
+      <div className="mt-12 card-brutal bg-brutal-black text-brutal-white text-center">
+        <h3 className="font-display text-2xl mb-2">🛠️ WANT TO ADD YOUR OWN DOMAIN?</h3>
+        <p className="text-brutal-gray mb-4">
+          Panduan lengkap setup email forwarding untuk domain kamu
+        </p>
+        <Link to="/setup" className="btn-brutal inline-block bg-brutal-orange text-brutal-black">
+          📖 BACA SETUP GUIDE →
+        </Link>
       </div>
     </div>
   )
